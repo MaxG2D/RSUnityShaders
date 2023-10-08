@@ -2,8 +2,8 @@
 
 // Macros
 
-#ifndef SEBLOOM_LENS_FILENAME
-#define SEBLOOM_LENS_FILENAME "SEBloom_Lens.png"
+#ifndef cBlurSize
+#define cBlurSize 4
 #endif
 
 #define DEF_BLOOM_TEX(NAME, DIV) \
@@ -91,7 +91,7 @@ pass BlurY_##B##_2 { \
 
 // Constants
 
-static const float cBlurSize = 4.0;
+//static const float cBlurSize = 4.0;
 
 // Uniforms
 
@@ -106,36 +106,6 @@ uniform float uBloomIntensity <
 	ui_max     = 0.4;
 	ui_step    = 0.001;
 > = 0.05;
-
-uniform float uLensDirtIntensity <
-	ui_label   = "Lens Dirt Intensity";
-	ui_tooltip = "The amount that the lens dirt texture "
-	             "contributes to light scattering. Increase "
-				 "this value for a dirtier lens.\n"
-				 "\nDefault: 0.05";
-	ui_type    = "drag";
-	ui_min     = 0.0;
-	ui_max     = 0.95;
-	ui_step    = 0.001;
-> = 0.05;
-
-uniform float uExposure <
-	ui_label   = "Exposure";
-	ui_tooltip = "Default: 1.0";
-	ui_type    = "drag";
-	ui_min     = 0.001;
-	ui_max     = 3.0;
-	ui_step    = 0.001;
-> = 1.0;
-
-uniform float uMaxBrightness <
-	ui_label   = "Max Brightness";
-	ui_tooltip = "Default: 100.0";
-	ui_type    = "drag";
-	ui_min     = 1.0;
-	ui_max     = 1000.0;
-	ui_step    = 1.0;
-> = 100.0;
 
 // Textures
 
@@ -157,17 +127,6 @@ DEF_BLOOM_TEX(Bloom4B, 32);
 DEF_BLOOM_TEX(Bloom5A, 64);
 DEF_BLOOM_TEX(Bloom5B, 64);
 
-texture2D tSEBloom_Lens <
-	source = SEBLOOM_LENS_FILENAME;
-> {
-	Width  = BUFFER_WIDTH;
-	Height = BUFFER_HEIGHT;
-};
-sampler2D sLens {
-	Texture     = tSEBloom_Lens;
-	SRGBTexture = true;
-};
-
 // Functions
 
 float4 tex2D_bilinear(sampler2D sp, float2 uv) {
@@ -187,19 +146,6 @@ float4 tex2D_bilinear(sampler2D sp, float2 uv) {
 	float4 b = lerp(bl, br, f.x);
 
 	return lerp(t, b, f.y);
-}
-
-float3 inv_reinhard(float3 color, float inv_max) {
-	return (color / max(1.0 - color, inv_max));
-}
-
-float3 inv_reinhard_lum(float3 color, float inv_max) {
-	float lum = max(color.r, max(color.g, color.b));
-	return color * (lum / max(1.0 - lum, inv_max));
-}
-
-float3 reinhard(float3 color) {
-	return color / (1.0 + color);
 }
 
 float3 get_curve(int i) {
@@ -246,7 +192,6 @@ float4 PS_GetHDR(
 	float2 uv       : TEXCOORD
 ) : SV_TARGET {
 	float3 color = TEX2D(sBackBuffer, uv).rgb;
-	color = inv_reinhard_lum(color, 1.0 / uMaxBrightness);
 	return float4(color, 1.0);
 }
 
@@ -272,10 +217,7 @@ float4 PS_Blend(
 	float4 position : SV_POSITION,
 	float2 uv       : TEXCOORD
 ) : SV_TARGET {
-	float3 color = TEX2D(sBackBuffer, uv).rgb;
-	color = inv_reinhard(color, 1.0 / uMaxBrightness);
-
-	float3 lens = TEX2D(sLens, uv).rgb;
+	float3 color = TEX2D(sBackBuffer, uv).rgb;;
 
 	float3 bloom0 = TEX2D(sBloom0B, uv).rgb;
 	float3 bloom1 = TEX2D(sBloom1B, uv).rgb;
@@ -291,20 +233,8 @@ float4 PS_Blend(
 				 + bloom4 * 0.35
 				 + bloom5 * 0.23;
 	bloom /= 2.2;
-
-	float3 lens_bloom = bloom0
-	                  + bloom1 * 0.8
-				      + bloom2 * 0.6
-				      + bloom3 * 0.45
-				      + bloom4 * 0.35
-				      + bloom5 * 0.23;
-	lens_bloom /= 3.2;
 	
 	color = lerp(color, bloom, exp(uBloomIntensity) - 1.0);
-	color = lerp(color, lens_bloom, saturate(lens * (exp(uLensDirtIntensity) - 1.0)));
-
-	color *= uExposure;
-	color = reinhard(color);
 
 	return float4(color, 1.0);
 }
