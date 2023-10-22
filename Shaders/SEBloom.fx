@@ -91,27 +91,52 @@ pass BlurY_##B##_2 { \
 
 // Constants
 
+static const int 
+	Additive = 0,
+	Overlay = 1;
+
 //static const float cBlurSize = 4.0;
 
 // Uniforms
 
+uniform bool ShowBloom
+<
+	ui_category = "Debug";
+	ui_label = "Show Bloom";
+	ui_tooltip =
+		"Displays the bloom texture.\n"
+		"\nDefault: Off";
+> = false;
+
+uniform int BlendingType
+<
+	ui_category = "Bloom";
+	ui_label = "Blending Type";
+	ui_tooltip =
+		"Methods of blending bloom with image.\n"
+		"\nDefault: Additive";
+	ui_type = "combo";
+	ui_items = "Additive\0Overlay\0";
+> = Additive;
+
 uniform float uBloomIntensity <
-	ui_label   = "Bloom Intensity";
-	ui_tooltip = "The amount of light that is scattered "
+	ui_category = "Bloom";
+	ui_label    = "Bloom Intensity";
+	ui_tooltip  = "The amount of light that is scattered "
 	             "inside the lens uniformly. Increase this "
 				 "value for a more drastic bloom.\n"
 				 "\nDefault: 0.05";
-	ui_type    = "drag";
-	ui_min     = 0.0;
-	ui_max     = 0.4;
-	ui_step    = 0.001;
+	ui_type     = "drag";
+	ui_min      = 0.0;
+	ui_max      = 0.4;
+	ui_step     = 0.001;
 > = 0.05;
 
 // Textures
 
 sampler2D sBackBuffer {
 	Texture     = ReShade::BackBufferTex;
-	SRGBTexture = true;
+	//SRGBTexture = true;
 };
 
 DEF_BLOOM_TEX(Bloom0A, 2);
@@ -234,8 +259,21 @@ float4 PS_Blend(
 				 + bloom5 * 0.23;
 	bloom /= 2.2;
 	
-	color = lerp(color, bloom, exp(uBloomIntensity) - 1.0);
-
+	if (BlendingType == Overlay)	
+	{
+	color.rgb = ShowBloom
+		? bloom.rgb
+		: lerp(color, bloom, exp(uBloomIntensity) - 1.0);
+	}
+	
+	else if (BlendingType == Additive)	
+	{
+	color.rgb = ShowBloom
+		? bloom.rgb
+		: color + (bloom.rgb * uBloomIntensity);
+	}
+	
+	//color = lerp(color, bloom, exp(uBloomIntensity) - 1.0);
 	return float4(color, 1.0);
 }
 
@@ -269,6 +307,6 @@ technique SEBloom {
 	pass Blend {
 		VertexShader    = PostProcessVS;
 		PixelShader     = PS_Blend;
-		SRGBWriteEnable = true;
+		//SRGBWriteEnable = true;
 	}
 }
