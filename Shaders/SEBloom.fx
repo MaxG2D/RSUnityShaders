@@ -2,10 +2,6 @@
 
 // Macros
 
-#ifndef cBlurSize
-#define cBlurSize 4
-#endif
-
 #define DEF_BLOOM_TEX(NAME, DIV) \
 texture2D tSEBloom_##NAME { \
 	Width  = BUFFER_WIDTH / DIV; \
@@ -31,28 +27,28 @@ float4 PS_BlurX_##SAMPLER_A##_1( \
 	float4 position : SV_POSITION, \
 	float2 uv       : TEXCOORD \
 ) : SV_TARGET { \
-	float2 size = float2(BUFFER_RCP_WIDTH * (cBlurSize * 0.5) * SPREAD * DIV, 0.0); \
+	float2 size = float2(BUFFER_RCP_WIDTH * (1.0) * SPREAD * DIV, 0.0); \
 	return float4(blur(s##SAMPLER_A, uv, size), 1.0); \
 } \
 float4 PS_BlurY_##SAMPLER_B##_1( \
 	float4 position : SV_POSITION, \
 	float2 uv       : TEXCOORD \
 ) : SV_TARGET { \
-	float2 size = float2(0.0, BUFFER_RCP_HEIGHT * (cBlurSize * 0.5) * SPREAD * DIV); \
+	float2 size = float2(0.0, BUFFER_RCP_HEIGHT * (1.0) * SPREAD * DIV); \
 	return float4(blur(s##SAMPLER_B, uv, size), 1.0); \
 } \
 float4 PS_BlurX_##SAMPLER_A##_2( \
 	float4 position : SV_POSITION, \
 	float2 uv       : TEXCOORD \
 ) : SV_TARGET { \
-	float2 size = float2(BUFFER_RCP_WIDTH * (cBlurSize * 0.5 + 1.0) * SPREAD * DIV, 0.0); \
+	float2 size = float2(BUFFER_RCP_WIDTH * (1.0 + 1.0) * SPREAD * DIV, 0.0); \
 	return float4(blur(s##SAMPLER_A, uv, size), 1.0); \
 } \
 float4 PS_BlurY_##SAMPLER_B##_2( \
 	float4 position : SV_POSITION, \
 	float2 uv       : TEXCOORD \
 ) : SV_TARGET { \
-	float2 size = float2(0.0, BUFFER_RCP_HEIGHT * (cBlurSize * 0.5 + 1.0) * SPREAD * DIV); \
+	float2 size = float2(0.0, BUFFER_RCP_HEIGHT * (1.0 + 1.0) * SPREAD * DIV); \
 	return float4(blur(s##SAMPLER_B, uv, size), 1.0); \
 }
 
@@ -95,8 +91,6 @@ static const int
 	Additive = 0,
 	Overlay = 1;
 
-//static const float cBlurSize = 4.0;
-
 // Uniforms
 
 uniform bool ShowBloom
@@ -107,6 +101,17 @@ uniform bool ShowBloom
 		"Displays the bloom texture.\n"
 		"\nDefault: Off";
 > = false;
+
+uniform int uBloomQuality <
+	ui_category = "Bloom";
+    ui_label = "Bloom Quality";
+	ui_tooltip = "Amount of samples used\n"
+				"Medium - 7, High - 11, VeryHigh - 13\n"
+				"\nDefault: High";
+	ui_type = "combo";
+	ui_items = "Medium\0High\0VeryHigh\0";
+
+> = 1;
 
 uniform int BlendingType
 <
@@ -123,20 +128,32 @@ uniform float uBloomIntensity <
 	ui_category = "Bloom";
 	ui_label    = "Bloom Intensity";
 	ui_tooltip  = "The amount of light that is scattered "
-	             "inside the lens uniformly. Increase this "
+	             "inside the lens uniformly.\n"
+				 "Increase this "
 				 "value for a more drastic bloom.\n"
 				 "\nDefault: 0.05";
 	ui_type     = "drag";
 	ui_min      = 0.0;
-	ui_max      = 0.4;
+	ui_max      = 2.0;
 	ui_step     = 0.001;
 > = 0.05;
+
+uniform float uBloomSpread <
+	ui_category = "Bloom";
+	ui_label    = "Bloom Spread";
+	ui_tooltip  = "Size of bloom spreading\n"
+				 "\nDefault: 0.75\n"
+				 "Neutral: 0.5";
+	ui_type     = "drag";
+	ui_min      = 0.01;
+	ui_max      = 4.0;
+	ui_step     = 0.01;
+> = 0.75;
 
 // Textures
 
 sampler2D sBackBuffer {
 	Texture     = ReShade::BackBufferTex;
-	//SRGBTexture = true;
 };
 
 DEF_BLOOM_TEX(Bloom0A, 2);
@@ -151,6 +168,8 @@ DEF_BLOOM_TEX(Bloom4A, 32);
 DEF_BLOOM_TEX(Bloom4B, 32);
 DEF_BLOOM_TEX(Bloom5A, 64);
 DEF_BLOOM_TEX(Bloom5B, 64);
+DEF_BLOOM_TEX(Bloom6A, 128);
+DEF_BLOOM_TEX(Bloom6B, 128);
 
 // Functions
 
@@ -173,26 +192,89 @@ float4 tex2D_bilinear(sampler2D sp, float2 uv) {
 	return lerp(t, b, f.y);
 }
 
-float3 get_curve(int i) {
-	static const float3 curve[7] = {
-		(0.0205).xxx,
-		(0.0855).xxx,
-		(0.232).xxx,
-		(0.324).xxx,
-		(0.232).xxx,
-		(0.0855).xxx,
-		(0.0205).xxx
-	};
-	return curve[i];
+//ORIGINAL CURVE
+float3 get_curve_medium(int i) {
+    static const float3 curve[7] = {
+        (0.0205).xxx,
+        (0.0855).xxx,
+        (0.232).xxx,
+        (0.324).xxx,
+        (0.232).xxx,
+        (0.0855).xxx,
+        (0.0205).xxx
+    };
+    return curve[i];
+}
+
+float3 get_curve_high(int i) {
+    static const float3 curve[11] = {
+        (0.003).xxx,  
+        (0.016).xxx,  
+        (0.05).xxx,  
+        (0.117).xxx, 
+        (0.194).xxx,  
+        (0.228).xxx,  
+        (0.194).xxx,  
+        (0.117).xxx, 
+        (0.05).xxx,  
+        (0.016).xxx,  
+        (0.003).xxx  
+    };
+    return curve[i];
+}
+
+float3 get_curve_veryhigh(int i) {
+    static const float3 curve[13] = {
+        (0.00135).xxx,
+        (0.0087).xxx,
+        (0.031).xxx,
+        (0.0717).xxx,
+        (0.1235).xxx,
+        (0.1643).xxx,
+        (0.1836).xxx,
+        (0.1643).xxx,
+        (0.1235).xxx,
+        (0.0717).xxx,
+        (0.031).xxx,
+        (0.0087).xxx,
+        (0.00135).xxx
+    };
+    return curve[i];
 }
 
 float3 blur(sampler2D sp, float2 uv, float2 dir) {
-	float2 coord = uv - dir * 3.0;
+	uint SamplesAmount = 0;
+	
+	if (uBloomQuality == 0)
+	{
+		SamplesAmount = 7;
+	}
+	else if (uBloomQuality == 1)
+	{
+		SamplesAmount = 11;
+	}
+	else if (uBloomQuality == 2)
+	{
+		SamplesAmount = 13;
+	}
+
+	float2 coord = uv - dir * ((SamplesAmount * 0.5) - 0.5);
 
 	float3 color = 0.0;
-	for (int i = 0; i < 7; ++i) {
+	for (int i = 0; i < SamplesAmount; ++i) {
 		float3 pixel = TEX2D(sp, coord).rgb;
-		color += pixel * get_curve(i);
+		if (uBloomQuality == 0)
+		{
+			color += pixel * get_curve_medium(i);
+		}
+		else if (uBloomQuality == 1)
+		{
+			color += pixel * get_curve_high(i);
+		}
+		else if (uBloomQuality == 2)
+		{
+			color += pixel * get_curve_veryhigh(i);
+		}
 		coord += dir;
 	}
 
@@ -221,22 +303,25 @@ float4 PS_GetHDR(
 }
 
 DEF_DOWN_SHADER(Bloom0A, 2)
-DEF_BLUR_SHADER(Bloom0B, Bloom0A, 0.5, 2)
+DEF_BLUR_SHADER(Bloom0B, Bloom0A, 1.0 * uBloomSpread, 2)
 
 DEF_DOWN_SHADER(Bloom0B, 4)
-DEF_BLUR_SHADER(Bloom1B, Bloom1A, 1.0, 4)
+DEF_BLUR_SHADER(Bloom1B, Bloom1A, 1.0 * uBloomSpread, 4)
 
 DEF_DOWN_SHADER(Bloom1B, 8)
-DEF_BLUR_SHADER(Bloom2B, Bloom2A, 0.75, 8)
+DEF_BLUR_SHADER(Bloom2B, Bloom2A, 1.0 * uBloomSpread, 8)
 
 DEF_DOWN_SHADER(Bloom2B, 16)
-DEF_BLUR_SHADER(Bloom3B, Bloom3A, 1.0, 16)
+DEF_BLUR_SHADER(Bloom3B, Bloom3A, 1.0 * uBloomSpread, 16)
 
 DEF_DOWN_SHADER(Bloom3B, 32)
-DEF_BLUR_SHADER(Bloom4B, Bloom4A, 1.0, 32)
+DEF_BLUR_SHADER(Bloom4B, Bloom4A, 1.0 * uBloomSpread, 32)
 
 DEF_DOWN_SHADER(Bloom4B, 64)
-DEF_BLUR_SHADER(Bloom5B, Bloom5A, 1.0, 64)
+DEF_BLUR_SHADER(Bloom5B, Bloom5A, 1.0 * uBloomSpread, 64)
+
+DEF_DOWN_SHADER(Bloom5B, 128)
+DEF_BLUR_SHADER(Bloom6B, Bloom6A, 1.0 * uBloomSpread, 128)
 
 float4 PS_Blend(
 	float4 position : SV_POSITION,
@@ -250,14 +335,16 @@ float4 PS_Blend(
 	float3 bloom3 = TEX2D(sBloom3B, uv).rgb;
 	float3 bloom4 = TEX2D(sBloom4B, uv).rgb;
 	float3 bloom5 = TEX2D(sBloom5B, uv).rgb;
+	float3 bloom6 = TEX2D(sBloom6B, uv).rgb;
 
-	float3 bloom = bloom0 * 0.5
-	             + bloom1 * 0.8 * 0.75
-				 + bloom2 * 0.6
-				 + bloom3 * 0.45
-				 + bloom4 * 0.35
-				 + bloom5 * 0.23;
-	bloom /= 2.2;
+	float3 bloom = bloom0
+	             + bloom1
+				 + bloom2
+				 + bloom3
+				 + bloom4
+				 + bloom5
+				 + bloom6;
+	bloom /= 7;
 	
 	if (BlendingType == Overlay)	
 	{
@@ -273,7 +360,6 @@ float4 PS_Blend(
 		: color + (bloom.rgb * uBloomIntensity);
 	}
 	
-	//color = lerp(color, bloom, exp(uBloomIntensity) - 1.0);
 	return float4(color, 1.0);
 }
 
@@ -303,10 +389,12 @@ technique SEBloom {
 
 	DEF_DOWN_PASS(Bloom4B, Bloom5B)
 	DEF_BLUR_PASS(Bloom5B, Bloom5A)
+	
+	DEF_DOWN_PASS(Bloom5B, Bloom6B)
+	DEF_BLUR_PASS(Bloom6B, Bloom6A)
 
 	pass Blend {
 		VertexShader    = PostProcessVS;
 		PixelShader     = PS_Blend;
-		//SRGBWriteEnable = true;
 	}
 }
